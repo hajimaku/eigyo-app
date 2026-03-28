@@ -12,6 +12,7 @@
   <meta name="apple-mobile-web-app-title" content="営業管理" />
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js"></script>
   <style>
     * { -webkit-tap-highlight-color: transparent; }
     body { background: #f3f4f6; }
@@ -202,6 +203,7 @@
     <div class="flex flex-col gap-3">
       <button class="btn bg-blue-500 text-white" onclick="saveRecord()">保存 / 更新</button>
       <button class="btn bg-green-500 text-white" onclick="exportCsv()">この月のデータ出力（CSV）</button>
+      <button class="btn bg-emerald-600 text-white" onclick="exportExcel()">この月のデータ出力（Excel）</button>
       <button class="btn bg-red-500 text-white" onclick="deleteMonthData()">月データ削除</button>
       <button class="btn bg-green-600 text-white" onclick="backupData()">バックアップ保存（コピー）</button>
       <button class="btn bg-blue-600 text-white" onclick="restoreData()">復元（貼り付け）</button>
@@ -795,6 +797,115 @@ function exportCsv() {
   document.body.removeChild(a);
   URL.revokeObjectURL(a.href);
   showToast('CSVをダウンロードしました');
+}
+
+// ===== Excel出力 =====
+function exportExcel() {
+  const records = loadRecords()
+    .filter(r=>r.date.startsWith(currentMonth))
+    .sort((a,b)=>a.date.localeCompare(b.date));
+  if (records.length===0) { alert('データがありません'); return; }
+
+  const target = getTarget(currentMonth);
+  const k = calcKpi(records, target);
+  const wb = XLSX.utils.book_new();
+
+  // ===== シート1: 日次サマリー =====
+  const summaryRows = [
+    ['日付','対応数','売上','買取金額','粗利','成約数','不成約数','不成約備考','顧客数']
+  ];
+  records.forEach(r=>{
+    summaryRows.push([
+      r.date,
+      (r.contracted||0)+(r.notContracted||0),
+      r.sales||0, r.buy||0, r.gross||0,
+      r.contracted||0, r.notContracted||0,
+      r.notContractedNote||'',
+      r.customers||0
+    ]);
+  });
+  const ws1 = XLSX.utils.aoa_to_sheet(summaryRows);
+  // 列幅
+  ws1['!cols'] = [10,8,14,14,14,8,8,24,8].map(w=>({wch:w}));
+  // 金額列に数値フォーマット
+  const moneyFmt = '¥#,##0';
+  for (let r=1; r<summaryRows.length; r++) {
+    ['C','D','E'].forEach(col=>{
+      const addr = col+(r+1);
+      if (ws1[addr]) ws1[addr].z = moneyFmt;
+    });
+  }
+  XLSX.utils.book_append_sheet(wb, ws1, '日次サマリー');
+
+  // ===== シート2: 成約明細 =====
+  const contractRows = [['日付','成約#','売上','買取金額','粗利','備考']];
+  records.forEach(r=>{
+    if (Array.isArray(r.contracts) && r.contracts.length>0) {
+      r.contracts.forEach((c,i)=>{
+        contractRows.push([r.date, i+1, c.sales||0, c.buy||0, c.gross||0, c.note||'']);
+      });
+    } else if ((r.sales||0)>0 || (r.buy||0)>0) {
+      contractRows.push([r.date, 1, r.sales||0, r.buy||0, r.gross||0, '']);
+    }
+  });
+  const ws2 = XLSX.utils.aoa_to_sheet(contractRows);
+  ws2['!cols'] = [10,6,14,14,14,28].map(w=>({wch:w}));
+  for (let r=1; r<contractRows.length; r++) {
+    ['C','D','E'].forEach(col=>{
+      const addr = col+(r+1);
+      if (ws2[addr]) ws2[addr].z = moneyFmt;
+    });
+  }
+  XLSX.utils.book_append_sheet(wb, ws2, '成約明細');
+
+  // ===== シート3: KPI =====
+  const [y,m] = currentMonth.split('-');
+  const kpiRows = [
+    ['指標', '値'],
+    ['期間', `${y}年${parseInt(m)}月`],
+    ['', ''],
+    ['【実績】', ''],
+    ['累計売上', k.sales],
+    ['累計買取金額', k.buy],
+    ['累計粗利', k.gross],
+    ['粗利率', k.sales>0 ? +(k.gross/k.sales*100).toFixed(1) : 0],
+    ['', ''],
+    ['【目標対比】', ''],
+    ['売上目標', target.salesTarget||0],
+    ['売上達成率', +pct(k.salesRate).replace('%','')],
+    ['売上目標まであと', Math.max(0,(target.salesTarget||0)-k.sales)],
+    ['粗利目標', target.grossTarget||0],
+    ['粗利達成率', +pct(k.grossRate).replace('%','')],
+    ['粗利目標まであと', Math.max(0,(target.grossTarget||0)-k.gross)],
+    ['', ''],
+    ['【対応・成約】', ''],
+    ['成約数', k.cont],
+    ['不成約数', k.notCont],
+    ['顧客数', k.cust],
+    ['合計対応数', k.resp],
+    ['平均粗利単価', Math.round(k.avgGross)],
+    ['', ''],
+    ['【予測】', ''],
+    ['残り日数', k.remain],
+    ['粗利着地予想', Math.round(k.projection)],
+    ['1日あたり必要粗利額', Math.round(k.dailyNeeded)],
+  ];
+  const ws3 = XLSX.utils.aoa_to_sheet(kpiRows);
+  ws3['!cols'] = [{wch:22},{wch:18}];
+  // 金額行に書式
+  [4,5,6,10,12,13,14,16,22,26,27].forEach(rowIdx=>{
+    const addr = 'B'+(rowIdx+1);
+    if (ws3[addr] && typeof ws3[addr].v === 'number') ws3[addr].z = moneyFmt;
+  });
+  // % 行
+  [7,11,14].forEach(rowIdx=>{
+    const addr = 'B'+(rowIdx+1);
+    if (ws3[addr]) ws3[addr].z = '0.0"%"';
+  });
+  XLSX.utils.book_append_sheet(wb, ws3, 'KPI');
+
+  XLSX.writeFile(wb, `eigyo_${currentMonth}.xlsx`);
+  showToast('Excelをダウンロードしました');
 }
 
 // ===== バックアップ/復元 =====
