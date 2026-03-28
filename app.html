@@ -1,0 +1,897 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>営業成績ダッシュボード</title>
+  <link rel="manifest" href="./manifest.json" />
+  <link rel="apple-touch-icon" href="./icon.svg" />
+  <meta name="theme-color" content="#3b82f6" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="営業管理" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    * { -webkit-tap-highlight-color: transparent; }
+    body { background: #f3f4f6; }
+    .btn { min-height: 48px; font-size: 15px; font-weight: 600; border-radius: 10px; cursor: pointer; transition: opacity .15s; display: flex; align-items: center; justify-content: center; }
+    .btn:active { opacity: .75; }
+    .card { background: #fff; border-radius: 14px; padding: 18px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.07); }
+    .kpi-val { font-size: 22px; font-weight: 700; }
+    .kpi-sub { font-size: 14px; color: #6b7280; }
+    .progress-bg { background: #e5e7eb; border-radius: 99px; height: 10px; overflow: hidden; }
+    .progress-fill { height: 10px; border-radius: 99px; transition: width .4s; }
+
+    /* 入力フィールド共通 */
+    .field {
+      min-height: 48px; border: 1.5px solid #d1d5db; border-radius: 10px;
+      padding: 0 14px; font-size: 16px; width: 100%; box-sizing: border-box;
+      background: #fff; color: #111;
+    }
+    .field:focus { outline: none; border-color: #3b82f6; }
+
+    /* 金額フィールド：▲▼スピナー付き */
+    .money-wrap { position: relative; }
+    .money-wrap input { padding-right: 32px; }
+    .spin-btns {
+      position: absolute; right: 0; top: 0; bottom: 0;
+      width: 28px; display: flex; flex-direction: column;
+      border-left: 1px solid #e5e7eb;
+    }
+    .spin-btn {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      cursor: pointer; font-size: 10px; color: #6b7280; user-select: none;
+      transition: background .1s;
+    }
+    .spin-btn:first-child { border-bottom: 1px solid #e5e7eb; border-radius: 0 9px 0 0; }
+    .spin-btn:last-child  { border-radius: 0 0 9px 0; }
+    .spin-btn:hover  { background: #f3f4f6; color: #374151; }
+    .spin-btn:active { background: #e5e7eb; }
+
+    /* カウント入力：▲▼スピナー（step=1） */
+    input[type="number"] {
+      min-height: 48px; border: 1.5px solid #d1d5db; border-radius: 10px;
+      padding: 0 14px; font-size: 16px; width: 100%; box-sizing: border-box;
+      background: #fff; color: #111; text-align: left;
+    }
+    input[type="number"]:focus { outline: none; border-color: #3b82f6; }
+
+    select {
+      min-height: 48px; border: 1.5px solid #d1d5db; border-radius: 10px;
+      padding: 0 14px; font-size: 16px; width: 100%; box-sizing: border-box;
+      background: #fff; color: #111;
+    }
+    select:focus { outline: none; border-color: #3b82f6; }
+    input[type="date"] {
+      min-height: 48px; border: 1.5px solid #d1d5db; border-radius: 10px;
+      padding: 0 14px; font-size: 16px; width: 100%; box-sizing: border-box;
+      background: #fff; color: #111;
+    }
+    input[type="date"]:focus { outline: none; border-color: #3b82f6; }
+
+    .chart-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    th { background: #f9fafb; color: #374151; font-weight: 600; padding: 8px 6px; text-align: right; white-space: nowrap; }
+    th:first-child { text-align: left; }
+    td { padding: 9px 6px; text-align: right; border-bottom: 1px solid #f3f4f6; white-space: nowrap; }
+    td:first-child { text-align: left; }
+    tr:last-child td { border-bottom: none; }
+    tr.editable:hover { background: #f0f9ff; cursor: pointer; }
+    tr.editing td { background: #fefce8; }
+
+    .divider { border: none; border-top: 1px solid #f0f0f0; margin: 12px 0; }
+    .badge { display:inline-block; font-size:11px; font-weight:600; padding:2px 7px; border-radius:99px; }
+
+    /* バックアップ用テキストエリアモーダル */
+    .modal-bg { position:fixed; inset:0; background:rgba(0,0,0,.5); z-index:1000; display:flex; align-items:center; justify-content:center; padding:16px; }
+    .modal-box { background:#fff; border-radius:14px; padding:20px; width:100%; max-width:480px; max-height:80vh; display:flex; flex-direction:column; gap:12px; }
+    .modal-ta { flex:1; min-height:200px; border:1.5px solid #d1d5db; border-radius:10px; padding:10px; font-size:13px; font-family:monospace; resize:vertical; }
+
+    @media (min-width: 640px) {
+      .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .kpi-grid .kpi-val { font-size: 24px; }
+    }
+    @media (min-width: 769px) {
+      #root { max-width: 820px; margin: 0 auto; padding: 28px 20px; }
+      .kpi-grid { grid-template-columns: 1fr 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+<div id="root" class="px-3 py-4">
+
+  <!-- ヘッダー -->
+  <div class="flex items-center justify-between mb-4">
+    <h1 class="text-xl font-bold text-gray-800">営業成績ダッシュボード</h1>
+    <a href="#kpiSection" class="text-xs bg-blue-500 text-white px-3 py-2 rounded-lg font-semibold">KPIを見る ↓</a>
+  </div>
+
+  <!-- 月選択 -->
+  <div class="card">
+    <div class="text-sm font-semibold text-gray-500 mb-2">月選択</div>
+    <select id="monthSelect"></select>
+  </div>
+
+  <!-- 目標設定 -->
+  <div class="card">
+    <div class="text-sm font-semibold text-gray-500 mb-3">目標設定</div>
+    <div class="flex flex-col gap-3">
+      <div>
+        <label class="text-xs text-gray-500 pl-1 mb-1 block">売上目標（円）</label>
+        <div class="money-wrap">
+          <input class="field" type="text" inputmode="numeric" id="salesTarget" placeholder="0"
+                 onfocus="unformatMoney(this)" onblur="formatMoneyInput(this)" oninput="onMoneyInput(this)" />
+          <div class="spin-btns">
+            <div class="spin-btn" onmousedown="startSpin('salesTarget',10000)" ontouchstart="startSpin('salesTarget',10000)">▲</div>
+            <div class="spin-btn" onmousedown="startSpin('salesTarget',-10000)" ontouchstart="startSpin('salesTarget',-10000)">▼</div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <label class="text-xs text-gray-500 pl-1 mb-1 block">粗利目標（円）</label>
+        <div class="money-wrap">
+          <input class="field" type="text" inputmode="numeric" id="grossTarget" placeholder="0"
+                 onfocus="unformatMoney(this)" onblur="formatMoneyInput(this)" oninput="onMoneyInput(this)" />
+          <div class="spin-btns">
+            <div class="spin-btn" onmousedown="startSpin('grossTarget',10000)" ontouchstart="startSpin('grossTarget',10000)">▲</div>
+            <div class="spin-btn" onmousedown="startSpin('grossTarget',-10000)" ontouchstart="startSpin('grossTarget',-10000)">▼</div>
+          </div>
+        </div>
+      </div>
+      <button class="btn bg-blue-500 text-white" onclick="saveTarget()">保存</button>
+    </div>
+  </div>
+
+  <!-- 日次データ入力 -->
+  <div class="card" id="inputSection">
+    <div class="flex items-center justify-between mb-3">
+      <div class="text-sm font-semibold text-gray-500">日次データ入力</div>
+      <button onclick="clearForm()" class="text-xs text-gray-400 border border-gray-200 px-3 py-1 rounded-lg">クリア</button>
+    </div>
+    <div id="editingBadge" class="hidden mb-2">
+      <span class="badge bg-yellow-100 text-yellow-700">編集中: <span id="editingDate"></span></span>
+    </div>
+    <div class="flex flex-col gap-3">
+      <input type="date" id="inputDate" />
+
+      <!-- 1日の総計 -->
+      <div style="background:#f9fafb; border-radius:10px; padding:14px;">
+        <div class="text-xs font-semibold text-gray-500 mb-3">1日の総計</div>
+        <div class="flex flex-col gap-3">
+          <div class="flex gap-2 items-end">
+            <div style="flex:0 0 110px;">
+              <label class="text-xs text-gray-500 pl-1 mb-1 block">不成約数</label>
+              <input type="number" id="inputNotContracted" placeholder="0" min="0" step="1" />
+            </div>
+            <div style="flex:1;">
+              <label class="text-xs text-gray-500 pl-1 mb-1 block">不成約備考</label>
+              <input class="field" type="text" id="inputNotContractedNote" placeholder="例：予算オーバーなど" />
+            </div>
+          </div>
+          <div>
+            <label class="text-xs text-gray-500 pl-1 mb-1 block">顧客数</label>
+            <input type="number" id="inputCustomers" placeholder="0" min="0" step="1" />
+          </div>
+        </div>
+      </div>
+
+      <!-- 成約記録 -->
+      <div>
+        <div class="text-xs font-semibold text-gray-500 mb-2">成約記録</div>
+        <div id="contractList" class="flex flex-col gap-3"></div>
+        <button class="btn mt-2 w-full" onclick="addContractItem()"
+                style="min-height:48px; border:1.5px dashed #d1d5db; background:#fafafa; color:#6b7280; border-radius:10px; cursor:pointer; font-size:15px; font-weight:600;">
+          ＋ 成約を追加
+        </button>
+      </div>
+
+      <!-- 合計サマリー -->
+      <div id="contractSummary" class="hidden text-sm rounded-lg px-4 py-3" style="background:#eff6ff;">
+        <div class="flex flex-wrap gap-x-4 gap-y-1">
+          <span class="text-gray-600">成約数: <b id="summaryContracted" class="text-gray-900">0</b>件</span>
+          <span class="text-gray-600">売上合計: <b id="summarySales" class="text-blue-700">¥0</b></span>
+          <span class="text-gray-600">粗利合計: <b id="summaryGross" class="text-pink-600">¥0</b></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- データ操作ボタン -->
+  <div class="card">
+    <div class="flex flex-col gap-3">
+      <button class="btn bg-blue-500 text-white" onclick="saveRecord()">保存 / 更新</button>
+      <button class="btn bg-green-500 text-white" onclick="exportCsv()">この月のデータ出力（CSV）</button>
+      <button class="btn bg-red-500 text-white" onclick="deleteMonthData()">月データ削除</button>
+      <button class="btn bg-green-600 text-white" onclick="backupData()">バックアップ保存（コピー）</button>
+      <button class="btn bg-blue-600 text-white" onclick="restoreData()">復元（貼り付け）</button>
+    </div>
+  </div>
+
+  <!-- 期間指定集計 -->
+  <div class="card">
+    <div class="text-sm font-semibold text-gray-500 mb-3">期間指定集計</div>
+    <div class="flex flex-col gap-3">
+      <input type="date" id="periodStart" />
+      <input type="date" id="periodEnd" />
+      <button class="btn bg-blue-500 text-white" onclick="applyPeriod()">この期間の成績を見る</button>
+      <button class="btn bg-gray-200 text-gray-700" onclick="clearPeriod()">月全体に戻す</button>
+    </div>
+  </div>
+
+  <!-- KPIセクション -->
+  <div class="card" id="kpiSection">
+    <div class="flex items-center gap-2 mb-4">
+      <div class="text-base font-bold text-gray-800">KPI</div>
+      <div id="periodBadge" class="hidden badge bg-blue-100 text-blue-700 text-xs"></div>
+    </div>
+
+    <div id="kpiGrid" class="kpi-grid mb-4">
+      <div>
+        <div class="kpi-sub">累計売上</div>
+        <div class="kpi-val text-gray-900" id="kpiSales">¥0</div>
+      </div>
+      <div>
+        <div class="kpi-sub">累計買取金額</div>
+        <div class="kpi-val text-gray-900" id="kpiBuy">¥0</div>
+      </div>
+      <div>
+        <div class="kpi-sub">累計粗利</div>
+        <div class="flex items-baseline gap-1 flex-wrap">
+          <div class="kpi-val text-gray-900" id="kpiGross">¥0</div>
+          <span class="text-sm font-normal text-gray-500" id="kpiGrossRate"></span>
+        </div>
+      </div>
+    </div>
+
+    <hr class="divider" />
+
+    <!-- 予測・差分（当月のみ） -->
+    <div id="projectionBlock" class="space-y-2 text-sm mb-4">
+      <div class="flex justify-between"><span class="text-gray-600">平均粗利単価</span><span class="font-semibold" id="kpiAvgGross">¥0</span></div>
+      <div class="flex justify-between"><span class="text-gray-600">残り日数</span><span class="font-semibold" id="kpiRemain">0日</span></div>
+      <div class="flex justify-between"><span class="text-gray-600">粗利着地予想</span><span class="font-semibold" id="kpiProjection">¥0</span></div>
+      <div class="flex justify-between"><span class="text-gray-600">粗利目標まであと</span><span class="font-semibold" id="kpiGrossGap">¥0</span></div>
+      <div class="flex justify-between"><span class="text-gray-600">売上目標まであと</span><span class="font-semibold" id="kpiSalesGap">¥0</span></div>
+      <div class="flex justify-between"><span class="text-gray-600">1日あたり必要粗利額</span><span class="font-semibold" id="kpiDailyNeeded">¥0</span></div>
+    </div>
+    <!-- 期間指定時 -->
+    <div id="periodOnlyBlock" class="hidden space-y-2 text-sm mb-4">
+      <div class="flex justify-between"><span class="text-gray-600">平均粗利単価</span><span class="font-semibold" id="kpiAvgGross2">¥0</span></div>
+    </div>
+
+    <hr class="divider" />
+
+    <div class="space-y-3 mb-4">
+      <div>
+        <div class="flex justify-between text-sm mb-1"><span class="text-gray-600">売上達成率</span><span class="font-semibold" id="kpiSalesRate">0.0%</span></div>
+        <div class="progress-bg"><div class="progress-fill bg-blue-500" id="kpiSalesBar" style="width:0%"></div></div>
+      </div>
+      <div>
+        <div class="flex justify-between text-sm mb-1"><span class="text-gray-600">粗利達成率</span><span class="font-semibold" id="kpiGrossRateBar">0.0%</span></div>
+        <div class="progress-bg"><div class="progress-fill bg-pink-500" id="kpiGrossBar" style="width:0%"></div></div>
+      </div>
+    </div>
+
+    <hr class="divider" />
+
+    <div class="space-y-2 text-sm">
+      <div class="flex justify-between"><span class="text-gray-600">合計対応数</span><span class="font-semibold" id="kpiTotal">0</span></div>
+      <div class="flex justify-between"><span class="text-gray-600">成約数</span><span class="font-semibold" id="kpiContracted">0</span></div>
+      <div class="flex justify-between"><span class="text-gray-600">不成約数</span><span class="font-semibold" id="kpiNotContracted">0</span></div>
+      <div class="flex justify-between"><span class="text-gray-600">顧客数</span><span class="font-semibold" id="kpiCustomers">0</span></div>
+    </div>
+  </div>
+
+  <!-- グラフ -->
+  <div class="card">
+    <div class="text-base font-bold text-gray-800 mb-3">売上＋粗利グラフ</div>
+    <div class="chart-wrap">
+      <canvas id="salesChart" style="min-width:320px; height:220px;"></canvas>
+    </div>
+    <div class="flex flex-wrap gap-3 mt-3 text-xs text-gray-600">
+      <span class="flex items-center gap-1"><span class="inline-block w-4 h-0.5 bg-blue-500 rounded"></span>売上</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-4 h-0.5 bg-pink-400 rounded"></span>粗利</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-4 h-0.5 border-t-2 border-dashed border-orange-400"></span>売上目標</span>
+      <span class="flex items-center gap-1"><span class="inline-block w-4 h-0.5 border-t-2 border-dashed border-yellow-400"></span>粗利目標</span>
+    </div>
+  </div>
+
+  <!-- 日別履歴 -->
+  <div class="card">
+    <div class="flex items-center justify-between mb-3">
+      <div class="text-base font-bold text-gray-800">日別履歴</div>
+      <div class="text-xs text-gray-400">行をタップして編集</div>
+    </div>
+    <div style="overflow-x:auto;">
+      <table>
+        <thead>
+          <tr>
+            <th>日付</th><th>対応</th><th>売上</th><th>買取</th><th>粗利</th>
+            <th>成約</th><th>不成約</th><th>顧客</th><th></th>
+          </tr>
+        </thead>
+        <tbody id="historyBody"></tbody>
+      </table>
+      <div id="historyEmpty" class="text-center text-gray-400 text-sm py-6 hidden">データなし</div>
+    </div>
+  </div>
+
+</div>
+
+<!-- バックアップ用モーダル -->
+<div id="backupModal" class="modal-bg hidden">
+  <div class="modal-box">
+    <div class="font-bold text-gray-800" id="modalTitle">バックアップデータ</div>
+    <div class="text-xs text-gray-500" id="modalDesc">全選択してコピーしてください</div>
+    <textarea class="modal-ta" id="modalTa" spellcheck="false"></textarea>
+    <div class="flex gap-2">
+      <button class="btn bg-blue-500 text-white flex-1" id="modalAction">コピー</button>
+      <button class="btn bg-gray-200 text-gray-700 flex-1" onclick="closeModal()">閉じる</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ===== ストレージ =====
+const STORAGE_KEY = 'eigyo_records';
+const TARGET_KEY  = 'eigyo_targets';
+function loadRecords() { try { return JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]'); } catch { return []; } }
+function saveRecords(r) { localStorage.setItem(STORAGE_KEY, JSON.stringify(r)); }
+function loadTargets() { try { return JSON.parse(localStorage.getItem(TARGET_KEY)||'[]'); } catch { return []; } }
+function saveTargets(t) { localStorage.setItem(TARGET_KEY, JSON.stringify(t)); }
+function getTarget(ym) { return loadTargets().find(t=>t.yearMonth===ym)||{salesTarget:0,grossTarget:0}; }
+
+// ===== フォーマット =====
+function fmt(n) {
+  if (n===null||n===undefined||isNaN(n)) return '¥0';
+  return '¥'+Math.round(n).toLocaleString('ja-JP');
+}
+function pct(n) { return isFinite(n) ? n.toFixed(1)+'%' : '0.0%'; }
+
+// 金額入力フィールド用
+function parseMoneyVal(str) {
+  return parseInt((str||'').replace(/,/g,'')) || 0;
+}
+function toMoneyStr(n) {
+  if (!n || isNaN(n)) return '';
+  return Math.max(0,n).toLocaleString('ja-JP');
+}
+function onMoneyInput(el) {
+  // 入力中はカーソル位置を保持しつつ数字のみ許可
+  const pos = el.selectionStart;
+  const raw = el.value.replace(/[^0-9]/g,'');
+  el.value = raw;
+  try { el.setSelectionRange(pos, pos); } catch(e) {}
+}
+function unformatMoney(el) {
+  // フォーカス時：カンマを外して数字のみに
+  el.value = String(parseMoneyVal(el.value)||'').replace(/^0$/,'');
+}
+function formatMoneyInput(el) {
+  // フォーカスアウト時：カンマ付きに整形
+  const n = parseMoneyVal(el.value);
+  el.value = n > 0 ? toMoneyStr(n) : '';
+}
+
+// ===== スピンボタン（▲▼）=====
+let spinTimer = null;
+function startSpin(id, delta) {
+  doSpin(id, delta);
+  spinTimer = setInterval(() => doSpin(id, delta), 150);
+  const stop = () => { clearInterval(spinTimer); spinTimer = null; };
+  document.addEventListener('mouseup',  stop, {once:true});
+  document.addEventListener('touchend', stop, {once:true});
+}
+function doSpin(id, delta) {
+  const el = document.getElementById(id);
+  const cur = parseMoneyVal(el.value);
+  const next = Math.max(0, cur + delta);
+  el.value = toMoneyStr(next);
+}
+
+// ===== 月リスト =====
+function getMonthList() {
+  const months = [], now = new Date();
+  for (let i=-6; i<=3; i++) {
+    const d = new Date(now.getFullYear(), now.getMonth()+i, 1);
+    months.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+  }
+  return months;
+}
+function fmtMonthLabel(ym) { const [y,m]=ym.split('-'); return `${y}年${parseInt(m)}月`; }
+
+// ===== 状態 =====
+let currentMonth='', periodStart='', periodEnd='', chartInst=null;
+let contractIdSeq=0, contractItemsData=[];
+
+// ===== 成約アイテム管理 =====
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function addContractItem(data={}) {
+  const id = 'c'+(++contractIdSeq);
+  contractItemsData.push({id, sales:data.sales||0, buy:data.buy||0, note:data.note||''});
+  renderContractList();
+  updateContractSummary();
+}
+
+function removeContractItem(id) {
+  contractItemsData = contractItemsData.filter(c=>c.id!==id);
+  renderContractList();
+  updateContractSummary();
+}
+
+function renderContractList() {
+  const list = document.getElementById('contractList');
+  list.innerHTML='';
+  contractItemsData.forEach((c,i)=>{
+    const div = document.createElement('div');
+    div.className = 'contract-item';
+    div.style.cssText = 'border:1.5px solid #e5e7eb; border-radius:10px; padding:14px; background:#fff;';
+    div.innerHTML = `
+      <div class="flex items-center justify-between mb-3">
+        <span class="text-sm font-semibold text-gray-700">成約 #${i+1}</span>
+        <button onclick="removeContractItem('${c.id}')"
+                style="color:#9ca3af; font-size:20px; line-height:1; background:none; border:none; cursor:pointer; padding:2px 8px; border-radius:6px;"
+                onmouseover="this.style.background='#fee2e2';this.style.color='#ef4444'"
+                onmouseout="this.style.background='none';this.style.color='#9ca3af'">×</button>
+      </div>
+      <div class="flex flex-col gap-2">
+        <div>
+          <label class="text-xs text-gray-500 pl-1 mb-1 block">売上（円）</label>
+          <div class="money-wrap">
+            <input class="field" type="text" inputmode="numeric" id="cs_${c.id}" placeholder="0"
+                   value="${c.sales>0?toMoneyStr(c.sales):''}"
+                   onfocus="unformatMoney(this)" onblur="formatMoneyInput(this);updateContractSummary()" oninput="onMoneyInput(this)" />
+            <div class="spin-btns">
+              <div class="spin-btn" onmousedown="startSpin('cs_${c.id}',10000)" ontouchstart="startSpin('cs_${c.id}',10000)"
+                   onmouseup="updateContractSummary()" ontouchend="updateContractSummary()">▲</div>
+              <div class="spin-btn" onmousedown="startSpin('cs_${c.id}',-10000)" ontouchstart="startSpin('cs_${c.id}',-10000)"
+                   onmouseup="updateContractSummary()" ontouchend="updateContractSummary()">▼</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <label class="text-xs text-gray-500 pl-1 mb-1 block">買取金額（円）</label>
+          <div class="money-wrap">
+            <input class="field" type="text" inputmode="numeric" id="cb_${c.id}" placeholder="0"
+                   value="${c.buy>0?toMoneyStr(c.buy):''}"
+                   onfocus="unformatMoney(this)" onblur="formatMoneyInput(this);updateContractSummary()" oninput="onMoneyInput(this)" />
+            <div class="spin-btns">
+              <div class="spin-btn" onmousedown="startSpin('cb_${c.id}',10000)" ontouchstart="startSpin('cb_${c.id}',10000)"
+                   onmouseup="updateContractSummary()" ontouchend="updateContractSummary()">▲</div>
+              <div class="spin-btn" onmousedown="startSpin('cb_${c.id}',-10000)" ontouchstart="startSpin('cb_${c.id}',-10000)"
+                   onmouseup="updateContractSummary()" ontouchend="updateContractSummary()">▼</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <label class="text-xs text-gray-500 pl-1 mb-1 block">備考</label>
+          <input class="field" type="text" id="cn_${c.id}" placeholder="例：商品名・顧客名など" value="${escHtml(c.note)}" />
+        </div>
+      </div>
+    `;
+    list.appendChild(div);
+  });
+}
+
+function updateContractSummary() {
+  let totalSales=0, totalGross=0;
+  contractItemsData.forEach(c=>{
+    const s = parseMoneyVal((document.getElementById('cs_'+c.id)||{}).value||'');
+    const b = parseMoneyVal((document.getElementById('cb_'+c.id)||{}).value||'');
+    totalSales += s;
+    totalGross += (s-b);
+  });
+  const n = contractItemsData.length;
+  const summary = document.getElementById('contractSummary');
+  if (n>0) {
+    summary.classList.remove('hidden');
+    document.getElementById('summaryContracted').textContent = n;
+    document.getElementById('summarySales').textContent = fmt(totalSales);
+    document.getElementById('summaryGross').textContent = fmt(totalGross);
+  } else {
+    summary.classList.add('hidden');
+  }
+}
+
+function collectContracts() {
+  return contractItemsData.map(c=>({
+    sales: parseMoneyVal((document.getElementById('cs_'+c.id)||{}).value||''),
+    buy:   parseMoneyVal((document.getElementById('cb_'+c.id)||{}).value||''),
+    note:  (document.getElementById('cn_'+c.id)||{}).value||''
+  })).map(c=>({...c, gross:c.sales-c.buy}));
+}
+
+// ===== 初期化 =====
+window.addEventListener('DOMContentLoaded', () => {
+  const now = new Date();
+  currentMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+
+  const sel = document.getElementById('monthSelect');
+  getMonthList().forEach(ym => {
+    const o = document.createElement('option');
+    o.value=ym; o.textContent=fmtMonthLabel(ym);
+    if(ym===currentMonth) o.selected=true;
+    sel.appendChild(o);
+  });
+  sel.addEventListener('change', ()=>{ currentMonth=sel.value; periodStart=''; periodEnd=''; loadMonthUI(); });
+
+  document.getElementById('inputDate').value = now.toISOString().split('T')[0];
+  loadMonthUI();
+});
+
+function loadMonthUI() {
+  const t = getTarget(currentMonth);
+  document.getElementById('salesTarget').value = t.salesTarget>0 ? toMoneyStr(t.salesTarget) : '';
+  document.getElementById('grossTarget').value = t.grossTarget>0 ? toMoneyStr(t.grossTarget) : '';
+  document.getElementById('periodStart').value = '';
+  document.getElementById('periodEnd').value   = '';
+  refreshAll();
+}
+
+// ===== 集計 =====
+function getFilteredRecords() {
+  const all = loadRecords();
+  if (periodStart && periodEnd) return all.filter(r=>r.date>=periodStart && r.date<=periodEnd);
+  return all.filter(r=>r.date.startsWith(currentMonth));
+}
+function calcKpi(records, target) {
+  const sales   = records.reduce((s,r)=>s+(r.sales||0),0);
+  const buy     = records.reduce((s,r)=>s+(r.buy||0),0);
+  const gross   = records.reduce((s,r)=>s+(r.gross||0),0);
+  const cont    = records.reduce((s,r)=>s+(r.contracted||0),0);
+  const notCont = records.reduce((s,r)=>s+(r.notContracted||0),0);
+  const cust    = records.reduce((s,r)=>s+(r.customers||0),0);
+  const resp    = cont+notCont;
+  const now     = new Date();
+  const [y,m]   = currentMonth.split('-').map(Number);
+  const lastDay = new Date(y,m,0).getDate();
+  const elapsed = Math.max(1, now.getDate());
+  const remain  = Math.max(0, lastDay-now.getDate());
+  const projection  = (gross/elapsed)*lastDay;
+  const salesGap    = Math.max(0,(target.salesTarget||0)-sales);
+  const grossGap    = Math.max(0,(target.grossTarget||0)-gross);
+  const dailyNeeded = remain>0 ? grossGap/remain : 0;
+  const salesRate   = target.salesTarget>0 ? sales/target.salesTarget*100 : 0;
+  const grossRate   = target.grossTarget>0 ? gross/target.grossTarget*100 : 0;
+  return {sales,buy,gross,cont,notCont,cust,resp,
+          avgGross:cont>0?gross/cont:0,
+          remain,projection,salesGap,grossGap,dailyNeeded,salesRate,grossRate};
+}
+
+// ===== KPI描画 =====
+function renderKpi() {
+  const records = getFilteredRecords();
+  const target  = getTarget(currentMonth);
+  const k = calcKpi(records, target);
+  const isPeriod = !!(periodStart && periodEnd);
+
+  const badge = document.getElementById('periodBadge');
+  if (isPeriod) { badge.textContent=`${periodStart} 〜 ${periodEnd}`; badge.classList.remove('hidden'); }
+  else badge.classList.add('hidden');
+
+  document.getElementById('projectionBlock').classList.toggle('hidden', isPeriod);
+  document.getElementById('periodOnlyBlock').classList.toggle('hidden', !isPeriod);
+
+  document.getElementById('kpiSales').textContent  = fmt(k.sales);
+  document.getElementById('kpiBuy').textContent    = fmt(k.buy);
+  document.getElementById('kpiGross').textContent  = fmt(k.gross);
+  document.getElementById('kpiGrossRate').textContent = k.sales>0 ? `(${pct(k.gross/k.sales*100)})` : '';
+
+  if (!isPeriod) {
+    document.getElementById('kpiAvgGross').textContent   = fmt(k.avgGross);
+    document.getElementById('kpiRemain').textContent     = `${k.remain}日`;
+    document.getElementById('kpiProjection').textContent = fmt(k.projection);
+
+    const gEl=document.getElementById('kpiGrossGap');
+    gEl.textContent = k.grossGap===0 ? '¥0（達成）' : fmt(k.grossGap);
+    gEl.className   = `font-semibold ${k.grossGap===0?'text-red-500':''}`;
+    const sEl=document.getElementById('kpiSalesGap');
+    sEl.textContent = k.salesGap===0 ? '¥0（達成）' : fmt(k.salesGap);
+    sEl.className   = `font-semibold ${k.salesGap===0?'text-red-500':''}`;
+
+    document.getElementById('kpiDailyNeeded').textContent = fmt(k.dailyNeeded);
+  } else {
+    document.getElementById('kpiAvgGross2').textContent = fmt(k.avgGross);
+  }
+
+  document.getElementById('kpiSalesRate').textContent    = pct(k.salesRate);
+  document.getElementById('kpiSalesBar').style.width     = Math.min(100,k.salesRate)+'%';
+  document.getElementById('kpiGrossRateBar').textContent = pct(k.grossRate);
+  document.getElementById('kpiGrossBar').style.width     = Math.min(100,k.grossRate)+'%';
+
+  document.getElementById('kpiTotal').textContent         = k.resp.toLocaleString('ja-JP');
+  document.getElementById('kpiContracted').textContent    = `${k.cont.toLocaleString('ja-JP')}${k.resp>0?' ('+pct(k.cont/k.resp*100)+')':''}`;
+  document.getElementById('kpiNotContracted').textContent = `${k.notCont.toLocaleString('ja-JP')}${k.resp>0?' ('+pct(k.notCont/k.resp*100)+')':''}`;
+  document.getElementById('kpiCustomers').textContent     = `${k.cust.toLocaleString('ja-JP')}${k.resp>0?' ('+pct(k.cust/k.resp*100)+')':''}`;
+}
+
+// ===== グラフ描画 =====
+function renderChart() {
+  const records = getFilteredRecords().sort((a,b)=>a.date.localeCompare(b.date));
+  const target  = getTarget(currentMonth);
+  const labels  = records.map(r=>r.date.slice(5));
+  let cs=0, cg=0;
+  const salesData = records.map(r=>{ cs+=r.sales||0; return cs; });
+  const grossData = records.map(r=>{ cg+=r.gross||0; return cg; });
+  const stLine = labels.map(()=>target.salesTarget||null);
+  const gtLine = labels.map(()=>target.grossTarget||null);
+
+  const ctx = document.getElementById('salesChart').getContext('2d');
+  if (chartInst) chartInst.destroy();
+  chartInst = new Chart(ctx, {
+    type:'line',
+    data:{ labels, datasets:[
+      {label:'売上',  data:salesData, borderColor:'#3b82f6',backgroundColor:'rgba(59,130,246,.08)', fill:true, tension:.35, pointRadius:3, borderWidth:2},
+      {label:'粗利',  data:grossData, borderColor:'#f472b6',backgroundColor:'rgba(244,114,182,.06)',fill:true, tension:.35, pointRadius:3, borderWidth:2},
+      {label:'売上目標',data:stLine,  borderColor:'#fb923c', borderDash:[6,3], borderWidth:2, pointRadius:0, fill:false},
+      {label:'粗利目標',data:gtLine,  borderColor:'#eab308', borderDash:[6,3], borderWidth:2, pointRadius:0, fill:false},
+    ]},
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      plugins:{legend:{display:false}},
+      scales:{
+        x:{ticks:{font:{size:11},maxTicksLimit:10}},
+        y:{ticks:{
+          callback:v=>v>=1000000?'¥'+(v/1000000).toFixed(1)+'M':v>=1000?'¥'+(v/1000).toFixed(0)+'K':'¥'+v,
+          font:{size:11},maxTicksLimit:6
+        }}
+      }
+    }
+  });
+}
+
+// ===== 日別履歴 =====
+function renderHistory() {
+  const records = getFilteredRecords().sort((a,b)=>b.date.localeCompare(a.date));
+  const tbody = document.getElementById('historyBody');
+  tbody.innerHTML='';
+  const empty = document.getElementById('historyEmpty');
+  if (records.length===0) { empty.classList.remove('hidden'); return; }
+  empty.classList.add('hidden');
+  records.forEach(r=>{
+    const resp=(r.contracted||0)+(r.notContracted||0);
+    const tr=document.createElement('tr');
+    tr.className='editable';
+    tr.innerHTML=`
+      <td>${r.date.slice(5)}</td>
+      <td>${resp.toLocaleString('ja-JP')}</td>
+      <td>${fmt(r.sales)}</td>
+      <td>${fmt(r.buy)}</td>
+      <td>${fmt(r.gross)}</td>
+      <td>${(r.contracted||0).toLocaleString('ja-JP')}</td>
+      <td>${(r.notContracted||0).toLocaleString('ja-JP')}</td>
+      <td>${(r.customers||0).toLocaleString('ja-JP')}</td>
+      <td><button onclick="event.stopPropagation();deleteRecord('${r.date}')"
+          class="text-xs text-white bg-red-400 px-2 py-1 rounded-md">削除</button></td>
+    `;
+    tr.addEventListener('click', ()=>loadRecordToForm(r,tr));
+    tbody.appendChild(tr);
+  });
+}
+
+function loadRecordToForm(r, tr) {
+  document.querySelectorAll('#historyBody tr.editing').forEach(el=>el.classList.remove('editing'));
+  tr.classList.add('editing');
+  document.getElementById('inputDate').value = r.date;
+  document.getElementById('inputNotContracted').value = r.notContracted||'';
+  document.getElementById('inputNotContractedNote').value = r.notContractedNote||'';
+  document.getElementById('inputCustomers').value = r.customers||'';
+  // 成約記録を読み込む
+  contractItemsData=[];
+  if (Array.isArray(r.contracts) && r.contracts.length>0) {
+    r.contracts.forEach(c=>{
+      contractItemsData.push({id:'c'+(++contractIdSeq), sales:c.sales||0, buy:c.buy||0, note:c.note||''});
+    });
+  } else if ((r.sales||0)>0 || (r.buy||0)>0) {
+    // 旧フォーマット：売上・買取を1件の成約として読み込む
+    contractItemsData.push({id:'c'+(++contractIdSeq), sales:r.sales||0, buy:r.buy||0, note:''});
+  }
+  renderContractList();
+  updateContractSummary();
+  document.getElementById('editingBadge').classList.remove('hidden');
+  document.getElementById('editingDate').textContent = r.date;
+  document.getElementById('inputSection').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+function refreshAll() { renderKpi(); renderChart(); renderHistory(); }
+
+// ===== 操作関数 =====
+function saveTarget() {
+  const salesT = parseMoneyVal(document.getElementById('salesTarget').value);
+  const grossT = parseMoneyVal(document.getElementById('grossTarget').value);
+  const targets = loadTargets().filter(t=>t.yearMonth!==currentMonth);
+  targets.push({yearMonth:currentMonth, salesTarget:salesT, grossTarget:grossT});
+  saveTargets(targets);
+  // 保存後も表示をカンマ付きに
+  document.getElementById('salesTarget').value = salesT>0 ? toMoneyStr(salesT) : '';
+  document.getElementById('grossTarget').value = grossT>0 ? toMoneyStr(grossT) : '';
+  showToast('目標を保存しました');
+  refreshAll();
+}
+
+function saveRecord() {
+  const date = document.getElementById('inputDate').value;
+  if (!date) { alert('日付を入力してください'); return; }
+  const contracts     = collectContracts();
+  const notContracted = parseInt(document.getElementById('inputNotContracted').value)||0;
+  const notContractedNote = document.getElementById('inputNotContractedNote').value||'';
+  const customers     = parseInt(document.getElementById('inputCustomers').value)||0;
+  const sales         = contracts.reduce((s,c)=>s+c.sales,0);
+  const buy           = contracts.reduce((s,c)=>s+c.buy,0);
+  const gross         = sales-buy;
+  const contracted    = contracts.length;
+  if (contracts.some(c=>c.buy>c.sales && c.sales>0)) {
+    if (!confirm('買取金額が売上を上回っている成約があります。このまま保存しますか？')) return;
+  }
+  const records = loadRecords().filter(r=>r.date!==date);
+  records.push({date,contracts,notContracted,notContractedNote,customers,sales,buy,gross,contracted});
+  saveRecords(records);
+  showToast(`${date} のデータを保存しました`);
+  clearForm();
+  refreshAll();
+}
+
+function clearForm() {
+  contractItemsData=[];
+  renderContractList();
+  updateContractSummary();
+  ['inputNotContracted','inputCustomers'].forEach(id=>document.getElementById(id).value='');
+  document.getElementById('inputNotContractedNote').value='';
+  document.getElementById('editingBadge').classList.add('hidden');
+  document.querySelectorAll('#historyBody tr.editing').forEach(el=>el.classList.remove('editing'));
+  document.getElementById('inputDate').value = new Date().toISOString().split('T')[0];
+}
+
+function deleteRecord(date) {
+  if (!confirm(`${date} のデータを削除しますか？`)) return;
+  saveRecords(loadRecords().filter(r=>r.date!==date));
+  clearForm();
+  refreshAll();
+}
+
+function deleteMonthData() {
+  if (!confirm(`${fmtMonthLabel(currentMonth)} の全データを削除しますか？`)) return;
+  saveRecords(loadRecords().filter(r=>!r.date.startsWith(currentMonth)));
+  showToast('月データを削除しました');
+  refreshAll();
+}
+
+// ===== CSV出力 =====
+function exportCsv() {
+  const records = loadRecords()
+    .filter(r=>r.date.startsWith(currentMonth))
+    .sort((a,b)=>a.date.localeCompare(b.date));
+  if (records.length===0) { alert('データがありません'); return; }
+  const header = '日付,対応数,売上,買取金額,粗利,成約,不成約,不成約備考,顧客\n';
+  const rows = records.map(r=>{
+    const resp=(r.contracted||0)+(r.notContracted||0);
+    const note = '"'+(r.notContractedNote||'').replace(/"/g,'""')+'"';
+    return [r.date,resp,r.sales||0,r.buy||0,r.gross||0,r.contracted||0,r.notContracted||0,note,r.customers||0].join(',');
+  }).join('\n');
+  const blob = new Blob(['\uFEFF'+header+rows],{type:'text/csv;charset=utf-8'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `eigyo_${currentMonth}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+  showToast('CSVをダウンロードしました');
+}
+
+// ===== バックアップ/復元 =====
+function backupData() {
+  const payload = JSON.stringify({
+    version:1, exportedAt:new Date().toISOString(),
+    records:loadRecords(), targets:loadTargets()
+  }, null, 2);
+
+  // クリップボードAPIを試みる（HTTPS/localhostのみ動作）
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.writeText(payload)
+      .then(()=>showToast('クリップボードにコピーしました'))
+      .catch(()=>showBackupModal(payload));
+  } else {
+    showBackupModal(payload);
+  }
+}
+
+function showBackupModal(text) {
+  document.getElementById('modalTitle').textContent  = 'バックアップデータ';
+  document.getElementById('modalDesc').textContent   = '全選択（Ctrl+A / ⌘+A）してコピーしてください';
+  document.getElementById('modalTa').value           = text;
+  document.getElementById('modalTa').readOnly        = true;
+  document.getElementById('modalAction').textContent = '全選択';
+  document.getElementById('modalAction').onclick     = ()=>{
+    document.getElementById('modalTa').select();
+    try { document.execCommand('copy'); showToast('コピーしました'); } catch(e) {}
+  };
+  document.getElementById('backupModal').classList.remove('hidden');
+  setTimeout(()=>{ document.getElementById('modalTa').select(); }, 100);
+}
+
+function restoreData() {
+  if (!confirm('データを上書きします。よろしいですか？')) return;
+
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard.readText()
+      .then(text=>applyRestore(text))
+      .catch(()=>showRestoreModal());
+  } else {
+    showRestoreModal();
+  }
+}
+
+function showRestoreModal() {
+  document.getElementById('modalTitle').textContent  = '復元（貼り付け）';
+  document.getElementById('modalDesc').textContent   = 'バックアップデータをここに貼り付けてください';
+  document.getElementById('modalTa').value           = '';
+  document.getElementById('modalTa').readOnly        = false;
+  document.getElementById('modalAction').textContent = '復元する';
+  document.getElementById('modalAction').onclick     = ()=>{
+    applyRestore(document.getElementById('modalTa').value);
+  };
+  document.getElementById('backupModal').classList.remove('hidden');
+}
+
+function applyRestore(text) {
+  try {
+    const data = JSON.parse(text);
+    if (!Array.isArray(data.records) || !Array.isArray(data.targets)) throw new Error('形式エラー');
+    saveRecords(data.records);
+    saveTargets(data.targets);
+    closeModal();
+    loadMonthUI();
+    showToast(`復元しました（${data.records.length}件）`);
+  } catch(e) {
+    alert('復元に失敗しました。バックアップデータが正しいか確認してください。\n'+e.message);
+  }
+}
+
+function closeModal() { document.getElementById('backupModal').classList.add('hidden'); }
+// モーダル外クリックで閉じる
+document.addEventListener('click', e=>{
+  if (e.target.id==='backupModal') closeModal();
+});
+
+function applyPeriod() {
+  const s=document.getElementById('periodStart').value;
+  const e=document.getElementById('periodEnd').value;
+  if (!s||!e) { alert('開始日と終了日を入力してください'); return; }
+  if (s>e)    { alert('開始日は終了日より前にしてください'); return; }
+  periodStart=s; periodEnd=e;
+  refreshAll();
+}
+function clearPeriod() {
+  periodStart=''; periodEnd='';
+  document.getElementById('periodStart').value='';
+  document.getElementById('periodEnd').value='';
+  refreshAll();
+}
+
+// ===== Service Worker 登録 =====
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('./sw.js').catch(() => {});
+  });
+}
+
+// ===== トースト =====
+let toastTimer=null;
+function showToast(msg) {
+  document.querySelectorAll('.toast-el').forEach(el=>el.remove());
+  const t=document.createElement('div');
+  t.className='toast-el';
+  t.textContent=msg;
+  t.style.cssText='position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#1f2937;color:#fff;padding:11px 24px;border-radius:99px;font-size:14px;font-weight:500;z-index:9999;white-space:nowrap;';
+  document.body.appendChild(t);
+  clearTimeout(toastTimer);
+  toastTimer=setTimeout(()=>t.remove(),2400);
+}
+</script>
+</body>
+</html>

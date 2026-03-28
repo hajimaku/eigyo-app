@@ -1,0 +1,19 @@
+{
+  "name": "営業成績ダッシュボード",
+  "short_name": "営業管理",
+  "description": "日次営業データを管理するダッシュボード",
+  "start_url": "./app.html",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f3f4f6",
+  "theme_color": "#3b82f6",
+  "lang": "ja",
+  "icons": [
+    {
+      "src": "./icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

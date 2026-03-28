@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" rx="96" fill="#3b82f6"/>
+  <!-- 棒グラフ -->
+  <rect x="72" y="310" width="90" height="150" rx="10" fill="white" opacity="0.85"/>
+  <rect x="211" y="220" width="90" height="240" rx="10" fill="white" opacity="0.85"/>
+  <rect x="350" y="130" width="90" height="330" rx="10" fill="white" opacity="0.85"/>
+  <!-- トレンドライン -->
+  <polyline points="117,310 256,220 395,130"
+    stroke="white" stroke-width="14" stroke-linecap="round" stroke-linejoin="round" fill="none" opacity="0.6"/>
+  <!-- ドット -->
+  <circle cx="117" cy="310" r="16" fill="white"/>
+  <circle cx="256" cy="220" r="16" fill="white"/>
+  <circle cx="395" cy="130" r="16" fill="white"/>
+  <!-- 横軸 -->
+  <line x1="56" y1="460" x2="456" y2="460" stroke="white" stroke-width="10" stroke-linecap="round" opacity="0.4"/>
+</svg>
