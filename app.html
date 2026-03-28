@@ -410,7 +410,19 @@ function escHtml(s) {
   return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 
+function syncContractData() {
+  contractItemsData.forEach(c=>{
+    const sEl = document.getElementById('cs_'+c.id);
+    const bEl = document.getElementById('cb_'+c.id);
+    const nEl = document.getElementById('cn_'+c.id);
+    if (sEl) c.sales = parseMoneyVal(sEl.value);
+    if (bEl) c.buy   = parseMoneyVal(bEl.value);
+    if (nEl) c.note  = nEl.value;
+  });
+}
+
 function addContractItem(data={}) {
+  syncContractData();
   const id = 'c'+(++contractIdSeq);
   contractItemsData.push({id, sales:data.sales||0, buy:data.buy||0, note:data.note||''});
   renderContractList();
@@ -418,6 +430,7 @@ function addContractItem(data={}) {
 }
 
 function removeContractItem(id) {
+  syncContractData();
   contractItemsData = contractItemsData.filter(c=>c.id!==id);
   renderContractList();
   updateContractSummary();
@@ -716,6 +729,7 @@ function saveTarget() {
 function saveRecord() {
   const date = document.getElementById('inputDate').value;
   if (!date) { alert('日付を入力してください'); return; }
+  syncContractData();
   const contracts     = collectContracts();
   const notContracted = parseInt(document.getElementById('inputNotContracted').value)||0;
   const notContractedNote = document.getElementById('inputNotContractedNote').value||'';
